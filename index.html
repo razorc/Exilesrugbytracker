@@ -988,6 +988,21 @@ function showLive() {
   if (state.currentMatch && state.currentMatch.timerStarted && !state.currentMatch.paused) startTimer();
 }
 
+function getTournamentTime(playerId, tournament) {
+  if (!tournament) return 0;
+  let total = 0;
+  (state.matches || []).forEach(m => {
+    if (m.tournament === tournament && m.times && m.times[playerId]) {
+      total += m.times[playerId];
+    }
+  });
+  // Add current match time if it's the same tournament
+  if (state.currentMatch && state.currentMatch.tournament === tournament && state.currentMatch.times) {
+    total += state.currentMatch.times[playerId] || 0;
+  }
+  return total;
+}
+
 function renderLive() {
   if (!state.currentMatch) return;
   const m = state.currentMatch;
@@ -1017,10 +1032,14 @@ function renderLive() {
     const p = state.players.find(x => x.id === id);
     const t = m.times[id] || 0;
     const display = displayMap[id] || p?.firstName || 'Unknown';
+    const ttt = getTournamentTime(id, m.tournament);
     return `<div class="player-card on-field" data-id="${id}" style="flex-direction:column; align-items:stretch; padding:8px 8px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-        <div style="font-weight:700; font-size:0.95rem;">${display}</div>
-        <div class="time" style="font-size:0.8rem; opacity:0.95;">${formatTime(t)}</div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%;">
+        <div style="font-weight:700; font-size:1.1rem;">${display}</div>
+        <div style="text-align:right;">
+          <div class="time" style="font-size:0.9rem; opacity:0.95;">${formatTime(t)}</div>
+          <div style="font-size:0.65rem; opacity:0.5; margin-top:1px;">TTT ${formatTime(ttt)}</div>
+        </div>
       </div>
       <div style="display:flex; align-items:center; gap:6px; margin-top:4px; width:100%;">
         <button class="btn" onclick="changeTries('${id}', -1)" style="padding:6px 4px; min-width:22px; font-size:0.8rem; ${(!m.timerStarted) ? 'opacity:0.4; pointer-events:none;' : ''}">−</button>
@@ -1035,11 +1054,15 @@ function renderLive() {
     const t = m.times[id] || 0;
     const display = displayMap[id] || p?.firstName || 'Unknown';
     const num = (m.benchOrder || []).find(x => x.id === id)?.num || '';
+    const ttt = getTournamentTime(id, m.tournament);
     return `<div class="player-card bench" data-id="${id}" style="flex-direction:column; align-items:stretch; padding:8px 8px; position:relative;">
       <div style="position:absolute; top:4px; left:4px; background:#444; color:#fff; border-radius:50%; width:18px; height:18px; display:flex; align-items:center; justify-content:center; font-size:0.65rem; font-weight:bold; z-index:1;">${num}</div>
-      <div style="display:flex; justify-content:space-between; align-items:center; width:100%; padding-left:18px;">
-        <div style="font-weight:700; font-size:0.95rem;">${display}</div>
-        <div class="time" style="font-size:0.8rem; opacity:0.75;">${formatTime(t)}</div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%; padding-left:18px;">
+        <div style="font-weight:700; font-size:1.1rem;">${display}</div>
+        <div style="text-align:right;">
+          <div class="time" style="font-size:0.9rem; opacity:0.75;">${formatTime(t)}</div>
+          <div style="font-size:0.65rem; opacity:0.4; margin-top:1px;">TTT ${formatTime(ttt)}</div>
+        </div>
       </div>
       <div style="display:flex; align-items:center; gap:6px; margin-top:4px; padding-left:18px; width:100%;">
         <button class="btn" onclick="changeTries('${id}', -1)" style="padding:6px 4px; min-width:22px; font-size:0.8rem; ${(!m.timerStarted) ? 'opacity:0.4; pointer-events:none;' : ''}">−</button>
@@ -1376,9 +1399,7 @@ function showSummary() {
   let html = `<p><strong>vs ${m.opponent || 'Unknown'}</strong> • ${m.tournament || 'General'}</p>`;
   html += `<p>Total match time: <strong>${formatTime(m.elapsed || 0)}</strong></p><hr style="margin:12px 0; border-color:#333;">`;
   const sorted = [...m.squad].sort((a, b) => {
-    const pa = state.players.find(p => p.id === a);
-    const pb = state.players.find(p => p.id === b);
-    return (pa?.firstName || '').localeCompare(pb?.firstName || '');
+    return (m.times[b] || 0) - (m.times[a] || 0);
   });
   html += sorted.map(id => {
     const display = displayMap[id] || 'Unknown';
