@@ -194,18 +194,13 @@ input, select {
       <button class="secondary" id="btnResume" style="display:none;">Resume Current Match</button>
       <p class="small" style="margin-top:12px;">Always 7 on the field. Max 12 in the squad. Rolling subs — just tap to swap.</p>
     </div>
-    <div class="card" id="tournamentCard" style="display:none;">
-      <h3>Tournament</h3>
-      <select id="tournamentSelect" onchange="renderTournamentStats()" style="margin-bottom:12px;"></select>
-      <div id="tournamentStats"></div>
-    </div>
     <div class="card">
       <h3>Quick Tips</h3>
       <ul style="padding-left:20px; margin-top:8px;">
         <li>Add players with first and last name, then assign to teams</li>
         <li>Start a match → select team → tap players to activate the starting 7 → Start Match</li>
         <li>On the pitch screen, tap <strong>OFF</strong> to sub a player off (timer stops) or <strong>ON</strong> to bring someone on</li>
-        <li>Enter opponent and tournament when starting a match — totals are tracked on the Home page</li>
+        <li>Enter opponent and select tournament when starting a match</li>
       </ul>
     </div>
   </div>
@@ -263,7 +258,7 @@ input, select {
       <div class="card">
         <h3>Match Details</h3>
         <input type="text" id="opponent" placeholder="Opponent (e.g. DH1, DD2, ADSB2)" oninput="this.style.border=''; this.style.background='';">
-        <input type="text" id="tournament" placeholder="Tournament" readonly style="background:#111; color:#ccc;">
+        <select id="tournament" style="margin-top:6px;"></select>
       </div>
       <div class="card">
         <h3>Activate Starting Lineup (tap to select 7)</h3>
@@ -378,16 +373,23 @@ let state = {
   teams: [],
   currentMatch: null,
   matches: [],
-  selectedOff: null
+  selectedOff: null,
+  lastTournament: ''
 };
 
 function load() {
   if (usingFirebase && db) {
     db.ref('exiles').once('value').then(snap => {
       const data = snap.val();
-      if (data) state = { ...state, ...data };
+      if (data) {
+        state = { ...state, ...data };
+      }
       ensureState();
       renderAll();
+      // Only add sample data if database is truly empty
+      if ((!state.players || state.players.length === 0) && (!state.teams || state.teams.length === 0)) {
+        maybeAddSampleData();
+      }
     }).catch(() => loadLocal());
     // Real-time sync
     ['players', 'teams', 'matches', 'currentMatch'].forEach(key => {
@@ -608,7 +610,7 @@ function renderDatabase() {
     const p = state.players.find(x => x.id === id);
     const display = p ? (p.shortName || p.firstName || 'Unknown') : 'Unknown';
     return { id, display, time: totals[id] };
-  }).sort((a, b) => a.display.localeCompare(b.display));
+  }).sort((a, b) => b.time - a.time);
 
   if (data.length === 0) {
     chartDiv.innerHTML = '<p class="small">No data for the selected filters.</p>';
@@ -642,12 +644,12 @@ function renderDatabase() {
     const teamData = Object.keys(teamTotals).map(tid => {
       const t = state.teams.find(x => x.id === tid);
       return { name: t ? t.name : 'Unknown', time: teamTotals[tid] };
-    }).sort((a, b) => a.name.localeCompare(b.name));
+    }).sort((a, b) => b.time - a.time);
 
     const tournData = Object.keys(tournTotals).map(t => ({
       name: t,
       time: tournTotals[t]
-    })).sort((a, b) => a.name.localeCompare(b.name));
+    })).sort((a, b) => b.time - a.time);
 
     const maxTeam = Math.max(...teamData.map(d => d.time), 1);
     const maxTourn = Math.max(...tournData.map(d => d.time), 1);
@@ -746,12 +748,11 @@ function renderTournamentStats() {
   const playersWithTime = playerIds.map(id => {
     const p = state.players.find(x => x.id === id);
     return { id, name: p ? `${p.firstName} ${p.lastName}`.trim() : 'Unknown', time: totals[id] };
-  }).sort((a, b) => (a.name.split(' ')[0] || '').localeCompare(b.name.split(' ')[0] || ''));
+  }).sort((a, b) => b.time - a.time);
 
-  const avg = playersWithTime.reduce((s, p) => s + p.time, 0) / playersWithTime.length;
-  const minTime = playersWithTime[0]?.time || 0;
+  const minTime = playersWithTime.length ? Math.min(...playersWithTime.map(p => p.time)) : 0;
 
-  let html = `<p class="small">Players listed alphabetically. Lowest time highlighted.</p>`;
+  let html = `<p class="small">Sorted by time played (highest first). Lowest time highlighted.</p>`;
   html += playersWithTime.map(p => {
     const isLow = p.time <= minTime + 30; // highlight those close to the minimum
     const style = isLow ? 'background:#3a1a1a; border-left:4px solid #C8102E; padding:8px; margin:4px 0; border-radius:6px;' : 'padding:8px 0; border-bottom:1px solid #333;';
@@ -857,12 +858,14 @@ function renderMatchSetup() {
   const teamSel = document.getElementById('matchTeam');
   teamSel.innerHTML = state.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('') || '<option>Create a team first</option>';
   
-  // Pre-fill tournament suggestions
-  const datalist = document.getElementById('tournamentList');
-  if (datalist) {
-    const used = [...new Set(state.matches.map(m => m.tournament).filter(Boolean))];
+  // Populate tournament dropdown
+  const tournSel = document.getElementById('tournament');
+  if (tournSel) {
+    const used = [...new Set((state.matches || []).map(m => m.tournament).filter(Boolean))];
     const tournaments = [...new Set([...DEFAULT_TOURNAMENTS, ...used])];
-    datalist.innerHTML = tournaments.map(t => `<option value="${t}">`).join('');
+    const current = state.lastTournament || '';
+    tournSel.innerHTML = tournaments.map(t => `<option value="${t}" ${t === current ? 'selected' : ''}>${t}</option>`).join('');
+    if (!current && tournaments.length) tournSel.value = tournaments[0];
   }
   
   renderPlayerBoxes();
@@ -1224,11 +1227,6 @@ document.getElementById('btnNewMatch').addEventListener('click', () => {
   document.getElementById('setupView').style.display = 'block';
   document.getElementById('liveView').style.display = 'none';
   document.getElementById('summaryView').style.display = 'none';
-  // Populate tournament from Home screen selection
-  const homeTournament = document.getElementById('tournamentSelect');
-  if (homeTournament && homeTournament.value) {
-    document.getElementById('tournament').value = homeTournament.value;
-  }
   renderMatchSetup();
 });
 
@@ -1265,6 +1263,7 @@ window.startMatchNow = function() {
     }
 
     const tournament = document.getElementById('tournament').value.trim() || 'General';
+    state.lastTournament = tournament;
 
     state.currentMatch = {
       teamId,
@@ -1423,51 +1422,58 @@ function updateMatchButton() {
 load();
 renderAll();
 
-// Sample data on first load
-if (state.players.length === 0 && state.teams.length === 0) {
-  const blueId = uid();
-  const greenId = uid();
-  state.teams.push({ id: blueId, name: 'Blue' });
-  state.teams.push({ id: greenId, name: 'Green' });
+// Sample data only if database is empty (handled inside load for Firebase)
+function maybeAddSampleData() {
+  if (state.players.length === 0 && state.teams.length === 0) {
+    const blueId = uid();
+    const greenId = uid();
+    state.teams.push({ id: blueId, name: 'Blue' });
+    state.teams.push({ id: greenId, name: 'Green' });
 
-  const bluePlayers = [
-    { first: 'Zilin', last: 'Wang' },
-    { first: 'Jack', last: 'Fraser' },
-    { first: 'Jax', last: 'De Schryver' },
-    { first: 'Maximilian', last: 'Zanetti', short: 'Max' },
-    { first: 'Nathanaël', last: 'Gruere', short: 'Nate' },
-    { first: 'Niccoló', last: 'Giacomelli', short: 'Nico' },
-    { first: 'Andrew', last: 'Jones' },
-    { first: 'Billy', last: 'Lohe' },
-    { first: 'Ellis', last: 'Goddard' },
-    { first: 'Felix', last: 'Cunliffe' },
-    { first: 'Jordan', last: 'Starke' }
-  ];
+    const bluePlayers = [
+      { first: 'Zilin', last: 'Wang' },
+      { first: 'Jack', last: 'Fraser' },
+      { first: 'Jax', last: 'De Schryver' },
+      { first: 'Maximilian', last: 'Zanetti', short: 'Max' },
+      { first: 'Nathanaël', last: 'Gruere', short: 'Nate' },
+      { first: 'Niccoló', last: 'Giacomelli', short: 'Nico' },
+      { first: 'Andrew', last: 'Jones' },
+      { first: 'Billy', last: 'Lohe' },
+      { first: 'Ellis', last: 'Goddard' },
+      { first: 'Felix', last: 'Cunliffe' },
+      { first: 'Jordan', last: 'Starke' }
+    ];
 
-  const greenPlayers = [
-    { first: 'Abdul', last: 'Solomon' },
-    { first: 'Leo', last: 'Fawaz' },
-    { first: 'Reuben', last: 'Thomas' },
-    { first: 'Ryan', last: 'Katerji' },
-    { first: 'Ryan', last: 'Selim' },
-    { first: 'Shane', last: 'Baker' },
-    { first: 'Yicheng', last: 'Liu' },
-    { first: 'Archie', last: 'Meyer' },
-    { first: 'Feras', last: 'El Ahrach' },
-    { first: 'Harry', last: 'Ko' },
-    { first: 'Jacob', last: 'Waite' },
-    { first: 'Jude', last: 'Trundle' }
-  ];
+    const greenPlayers = [
+      { first: 'Abdul', last: 'Solomon' },
+      { first: 'Leo', last: 'Fawaz' },
+      { first: 'Reuben', last: 'Thomas' },
+      { first: 'Ryan', last: 'Katerji' },
+      { first: 'Ryan', last: 'Selim' },
+      { first: 'Shane', last: 'Baker' },
+      { first: 'Yicheng', last: 'Liu' },
+      { first: 'Archie', last: 'Meyer' },
+      { first: 'Feras', last: 'El Ahrach' },
+      { first: 'Harry', last: 'Ko' },
+      { first: 'Jacob', last: 'Waite' },
+      { first: 'Jude', last: 'Trundle' }
+    ];
 
-  bluePlayers.forEach(s => {
-    state.players.push({ id: uid(), firstName: s.first, lastName: s.last, shortName: s.short || null, teamId: blueId });
-  });
-  greenPlayers.forEach(s => {
-    state.players.push({ id: uid(), firstName: s.first, lastName: s.last, shortName: s.short || null, teamId: greenId });
-  });
+    bluePlayers.forEach(s => {
+      state.players.push({ id: uid(), firstName: s.first, lastName: s.last, shortName: s.short || null, teamId: blueId });
+    });
+    greenPlayers.forEach(s => {
+      state.players.push({ id: uid(), firstName: s.first, lastName: s.last, shortName: s.short || null, teamId: greenId });
+    });
 
-  save();
-  renderAll();
+    save();
+    renderAll();
+  }
+}
+
+// Only add sample data for local storage mode (Firebase load handles it)
+if (!usingFirebase) {
+  maybeAddSampleData();
 }
 </script>
 </body>
