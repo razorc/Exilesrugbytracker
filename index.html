@@ -25,23 +25,33 @@ body {
   min-height: 100vh;
 }
 header {
-  background: var(--red);
+  background: #FFFFFF;
   padding: 12px 16px;
   text-align: center;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  position: relative;
+  z-index: 10;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-bottom: 3px solid #000000;
 }
-header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: 0.5px; }
-header .subtitle { font-size: 0.8rem; opacity: 0.9; }
+header .header-text { text-align: center; }
+header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: 0.5px; margin: 0; color: #000000; }
+header .subtitle { font-size: 0.75rem; margin-top: 2px; }
+header .subtitle .team { color: #666666; }
+header .subtitle .family { color: #666666; }
+header .subtitle .exiles { color: #C8102E; font-weight: 700; font-style: normal; }
 .container { padding: 16px; max-width: 800px; margin: 0 auto; }
 .tabs {
   display: flex;
-  background: var(--dark);
-  border-bottom: 2px solid var(--red);
+  background: #000000;
+  border-bottom: 2px solid #333;
   margin-bottom: 16px;
   overflow-x: auto;
+  position: relative;
+  z-index: 5;
 }
 .tab {
   flex: 1;
@@ -74,8 +84,29 @@ header .subtitle { font-size: 0.8rem; opacity: 0.9; }
   font-size: 1.1rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s ease;
   user-select: none;
+  animation: fadeSlideIn 0.35s ease;
+}
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.player-card.moving-off {
+  animation: slideToBench 0.4s ease forwards;
+}
+.player-card.moving-on {
+  animation: slideToField 0.4s ease forwards;
+}
+@keyframes slideToBench {
+  0% { opacity: 1; transform: translateX(0); }
+  50% { opacity: 0.4; transform: translateX(20px); }
+  100% { opacity: 0; transform: translateX(40px); }
+}
+@keyframes slideToField {
+  0% { opacity: 1; transform: translateX(0); }
+  50% { opacity: 0.4; transform: translateX(-20px); }
+  100% { opacity: 0; transform: translateX(-40px); }
 }
 .on-field {
   background: var(--on-bg);
@@ -174,15 +205,21 @@ input, select {
 </head>
 <body>
 <header>
-  <h1>DUBAI EXILES</h1>
-  <div class="subtitle">Rugby Tracker • Red • Black • White</div>
+  <div class="header-text">
+    <h1>DUBAI EXILES</h1>
+    <div class="subtitle">
+      <span class="team">One Team.</span> 
+      <span class="family">One Family.</span> 
+      <span class="exiles">One Exiles!</span>
+    </div>
+  </div>
 </header>
 
 <div class="tabs">
-  <button class="tab active" data-view="home">Home</button>
-  <button class="tab" data-view="teams">Team</button>
-  <button class="tab" data-view="players">Players</button>
-  <button class="tab" data-view="database">Database</button>
+  <button class="tab active" data-view="home" onclick="switchView('home')">Home</button>
+  <button class="tab" data-view="teams" onclick="switchView('teams')">Team</button>
+  <button class="tab" data-view="players" onclick="switchView('players')">Players</button>
+  <button class="tab" data-view="database" onclick="switchView('database')">Database</button>
 </div>
 
 <div class="container">
@@ -190,9 +227,26 @@ input, select {
   <div id="home" class="view active">
     <div class="card">
       <h2 style="margin-bottom:12px;">Match Control</h2>
-      <button class="primary" id="btnNewMatch">New Match</button>
+      <button class="primary" id="btnNewMatch" onclick="startNewMatch()">New Match</button>
       <button class="secondary" id="btnResume" style="display:none;">Resume Current Match</button>
+      <button class="secondary" id="btnPlayerStats" onclick="showPlayerStats()">Player Stats</button>
+      <button class="secondary" id="btnResults" onclick="showResults()">Results</button>
       <p class="small" style="margin-top:12px;">Always 7 on the field. Max 12 in the squad. Rolling subs — just tap to swap.</p>
+    </div>
+    <div class="card" id="resultsCard" style="display:none;">
+      <h3>Results</h3>
+      <div id="resultsTable"></div>
+    </div>
+    <div class="card" id="playerStatsCard" style="display:none;">
+      <h3>Player Stats</h3>
+      <select id="statsTeamFilter" onchange="renderPlayerStats()" style="margin-bottom:8px;">
+        <option value="">All Teams</option>
+      </select>
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <button class="secondary" onclick="sortStats('time')" style="flex:1; margin:0;">Sort by TTT</button>
+        <button class="secondary" onclick="sortStats('tries')" style="flex:1; margin:0;">Sort by Tries</button>
+      </div>
+      <div id="playerStatsTable"></div>
     </div>
     <div class="card">
       <h3>Quick Tips</h3>
@@ -517,16 +571,26 @@ function getDisplayNames(players) {
   return map;
 }
 
-function switchView(viewId) {
+window.switchView = function(viewId) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   const view = document.getElementById(viewId);
   if (view) view.classList.add('active');
-  // Highlight the corresponding tab if it exists
   const tab = document.querySelector(`.tab[data-view="${viewId}"]`);
   if (tab) tab.classList.add('active');
   renderAll();
-}
+};
+
+window.startNewMatch = function() {
+  state.currentMatch = null;
+  state.selectedOff = null;
+  activatedIds = [];
+  switchView('match');
+  document.getElementById('setupView').style.display = 'block';
+  document.getElementById('liveView').style.display = 'none';
+  document.getElementById('summaryView').style.display = 'none';
+  renderMatchSetup();
+};
 
 // ========== UI NAV ==========
 document.querySelectorAll('.tab').forEach(tab => {
@@ -536,6 +600,126 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 
 // ========== RENDER ==========
+window.showResults = function() {
+  const card = document.getElementById('resultsCard');
+  if (card) card.style.display = card.style.display === 'none' ? 'block' : 'none';
+  renderResults();
+};
+
+function renderResults() {
+  const container = document.getElementById('resultsTable');
+  if (!container) return;
+
+  const matches = (state.matches || []).slice().reverse(); // newest first
+
+  if (matches.length === 0) {
+    container.innerHTML = '<p class="small">No matches recorded yet.</p>';
+    return;
+  }
+
+  container.innerHTML = `
+    <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+      <tr style="border-bottom:2px solid #333; text-align:left;">
+        <th style="padding:8px 4px;">Match</th>
+        <th style="padding:8px 4px;">Tournament</th>
+        <th style="padding:8px 4px; text-align:center;">Score</th>
+      </tr>
+      ${matches.map(m => {
+        const team = state.teams.find(t => t.id === m.teamId);
+        const teamName = team ? team.name : 'DE';
+        const ourTries = Object.values(m.tries || {}).reduce((s, n) => s + (n || 0), 0);
+        const oppTries = m.oppTries || 0;
+        return `
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px 4px;">${teamName} vs ${m.opponent || 'Unknown'}</td>
+            <td style="padding:8px 4px;">${m.tournament || 'General'}</td>
+            <td style="padding:8px 4px; text-align:center; font-weight:700;">${ourTries} - ${oppTries}</td>
+          </tr>
+        `;
+      }).join('')}
+    </table>
+  `;
+}
+
+let statsSortBy = 'time';
+
+window.showPlayerStats = function() {
+  const card = document.getElementById('playerStatsCard');
+  if (card) card.style.display = card.style.display === 'none' ? 'block' : 'none';
+  renderPlayerStats();
+};
+
+window.sortStats = function(by) {
+  statsSortBy = by;
+  renderPlayerStats();
+};
+
+function renderPlayerStats() {
+  const container = document.getElementById('playerStatsTable');
+  const teamFilter = document.getElementById('statsTeamFilter');
+  if (!container) return;
+
+  // Populate team filter
+  if (teamFilter) {
+    const current = teamFilter.value;
+    teamFilter.innerHTML = '<option value="">All Teams</option>' +
+      state.teams.map(t => `<option value="${t.id}" ${t.id === current ? 'selected' : ''}>${t.name}</option>`).join('');
+  }
+  const selectedTeam = teamFilter ? teamFilter.value : '';
+
+  // Aggregate times and tries across all matches
+  const totals = {};
+  (state.matches || []).forEach(m => {
+    Object.entries(m.times || {}).forEach(([pid, secs]) => {
+      if (!totals[pid]) totals[pid] = { time: 0, tries: 0 };
+      totals[pid].time += secs;
+    });
+    Object.entries(m.tries || {}).forEach(([pid, t]) => {
+      if (!totals[pid]) totals[pid] = { time: 0, tries: 0 };
+      totals[pid].tries += t;
+    });
+  });
+
+  // Only players assigned to a team (filtered)
+  const players = state.players.filter(p => p.teamId && (!selectedTeam || p.teamId === selectedTeam)).map(p => {
+    const t = totals[p.id] || { time: 0, tries: 0 };
+    const team = state.teams.find(tm => tm.id === p.teamId);
+    return {
+      name: `${p.firstName || ''} ${p.lastName || ''}`.trim(),
+      short: p.shortName || '',
+      team: team ? team.name : '',
+      time: t.time,
+      tries: t.tries
+    };
+  });
+
+  players.sort((a, b) => statsSortBy === 'tries' ? b.tries - a.tries : b.time - a.time);
+
+  if (players.length === 0) {
+    container.innerHTML = '<p class="small">No players in teams yet.</p>';
+    return;
+  }
+
+  container.innerHTML = `
+    <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+      <tr style="border-bottom:2px solid #333; text-align:left;">
+        <th style="padding:8px 4px;">Player</th>
+        <th style="padding:8px 4px;">Team</th>
+        <th style="padding:8px 4px; text-align:right;">TTT</th>
+        <th style="padding:8px 4px; text-align:right;">Tries</th>
+      </tr>
+      ${players.map(p => `
+        <tr style="border-bottom:1px solid #333;">
+          <td style="padding:8px 4px;">${p.short || p.name}</td>
+          <td style="padding:8px 4px;">${p.team}</td>
+          <td style="padding:8px 4px; text-align:right;">${formatTime(p.time)}</td>
+          <td style="padding:8px 4px; text-align:right;">${p.tries}</td>
+        </tr>
+      `).join('')}
+    </table>
+  `;
+}
+
 function renderAll() {
   renderPlayers();
   renderTeams();
@@ -1007,16 +1191,11 @@ function renderLive() {
   if (!state.currentMatch) return;
   const m = state.currentMatch;
   const on = (m.onField || []).slice().sort((a, b) => {
-    const pa = state.players.find(p => p.id === a);
-    const pb = state.players.find(p => p.id === b);
-    return (pa?.firstName || '').localeCompare(pb?.firstName || '');
+    return getTournamentTime(b, m.tournament) - getTournamentTime(a, m.tournament);
   });
-  const benchOrder = m.benchOrder || [];
   const bench = (m.squad || []).filter(id => !on.includes(id))
     .sort((a, b) => {
-      const na = benchOrder.find(x => x.id === a)?.num || 999;
-      const nb = benchOrder.find(x => x.id === b)?.num || 999;
-      return na - nb;
+      return getTournamentTime(a, m.tournament) - getTournamentTime(b, m.tournament);
     });
   const squadPlayers = (m.squad || []).map(id => state.players.find(p => p.id === id)).filter(Boolean);
   const displayMap = getDisplayNames(squadPlayers);
@@ -1053,7 +1232,7 @@ function renderLive() {
     const p = state.players.find(x => x.id === id);
     const t = m.times[id] || 0;
     const display = displayMap[id] || p?.firstName || 'Unknown';
-    const num = (m.benchOrder || []).find(x => x.id === id)?.num || '';
+    const num = bench.indexOf(id) + 1;
     const ttt = getTournamentTime(id, m.tournament);
     return `<div class="player-card bench" data-id="${id}" style="flex-direction:column; align-items:stretch; padding:8px 8px; position:relative;">
       <div style="position:absolute; top:4px; left:4px; background:#444; color:#fff; border-radius:50%; width:18px; height:18px; display:flex; align-items:center; justify-content:center; font-size:0.65rem; font-weight:bold; z-index:1;">${num}</div>
@@ -1128,15 +1307,32 @@ function moveOff(id) {
   if (!m || !m.onField) return;
   const idx = m.onField.indexOf(id);
   if (idx > -1) {
-    m.onField.splice(idx, 1);
-    // Move to end of bench order
-    if (!m.benchOrder) m.benchOrder = [];
-    m.benchOrder = m.benchOrder.filter(x => x.id !== id);
-    m.benchOrder.push({ id });
-    // Re-number from 1
-    m.benchOrder.forEach((item, i) => item.num = i + 1);
-    save();
-    renderLive();
+    const card = document.querySelector(`.player-card[data-id="${id}"]`);
+    if (card) {
+      card.classList.add('moving-off');
+      setTimeout(() => {
+        m.onField.splice(idx, 1);
+        if (!m.benchOrder) m.benchOrder = [];
+        m.benchOrder = m.benchOrder.filter(x => x.id !== id);
+        m.benchOrder.push({ id });
+        // Re-order bench by TTT
+        const allBench = (m.squad || []).filter(bid => !m.onField.includes(bid));
+        const sorted = allBench.sort((a, b) => getTournamentTime(a, m.tournament) - getTournamentTime(b, m.tournament));
+        m.benchOrder = sorted.map((bid, i) => ({ id: bid, num: i + 1 }));
+        save();
+        renderLive();
+      }, 350);
+    } else {
+      m.onField.splice(idx, 1);
+      if (!m.benchOrder) m.benchOrder = [];
+      m.benchOrder = m.benchOrder.filter(x => x.id !== id);
+      m.benchOrder.push({ id });
+      const allBench = (m.squad || []).filter(bid => !m.onField.includes(bid));
+      const sorted = allBench.sort((a, b) => getTournamentTime(a, m.tournament) - getTournamentTime(b, m.tournament));
+      m.benchOrder = sorted.map((bid, i) => ({ id: bid, num: i + 1 }));
+      save();
+      renderLive();
+    }
   }
 }
 
@@ -1148,14 +1344,27 @@ function moveOn(id) {
     return;
   }
   if (!m.onField.includes(id)) {
-    m.onField.push(id);
-    if (m.benchOrder) {
-      m.benchOrder = m.benchOrder.filter(x => x.id !== id);
-      // Re-number remaining bench from 1
-      m.benchOrder.forEach((item, i) => item.num = i + 1);
+    const card = document.querySelector(`.player-card[data-id="${id}"]`);
+    if (card) {
+      card.classList.add('moving-on');
+      setTimeout(() => {
+        m.onField.push(id);
+        if (m.benchOrder) {
+          m.benchOrder = m.benchOrder.filter(x => x.id !== id);
+          m.benchOrder.forEach((item, i) => item.num = i + 1);
+        }
+        save();
+        renderLive();
+      }, 350);
+    } else {
+      m.onField.push(id);
+      if (m.benchOrder) {
+        m.benchOrder = m.benchOrder.filter(x => x.id !== id);
+        m.benchOrder.forEach((item, i) => item.num = i + 1);
+      }
+      save();
+      renderLive();
     }
-    save();
-    renderLive();
   }
 }
 
@@ -1309,8 +1518,11 @@ window.startMatchNow = function() {
     });
 
     const initialBench = finalSquad.filter(id => !activatedIds.includes(id));
-    const shuffled = [...initialBench].sort(() => Math.random() - 0.5);
-    state.currentMatch.benchOrder = shuffled.map((id, i) => ({ id, num: i + 1 }));
+    // Order bench by lowest TTT first
+    const sortedBench = [...initialBench].sort((a, b) => {
+      return getTournamentTime(a, tournament) - getTournamentTime(b, tournament);
+    });
+    state.currentMatch.benchOrder = sortedBench.map((id, i) => ({ id, num: i + 1 }));
 
     state.selectedOff = null;
     activatedIds = [];
