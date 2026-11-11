@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exiles Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --red: #C8102E;
+  --black: #0D0D0D;
+  --dark: #1A1A1A;
+  --white: #FFFFFF;
+  --silver: #A0A0A0;
+  --gold: #FFD700;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Roboto', sans-serif;
+  background: var(--black);
+  color: var(--white);
+  min-height: 100vh;
+}
+header {
+  background: linear-gradient(135deg, var(--red) 0%, #8B0A1E 100%);
+  padding: 24px 20px;
+  text-align: center;
+  border-bottom: 4px solid var(--gold);
+}
+header h1 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+header p {
+  font-family: 'Oswald', sans-serif;
+  font-size: 0.95rem;
+  opacity: 0.9;
+  margin-top: 4px;
+  letter-spacing: 1px;
+}
+.container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--dark);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  border: 1px solid #333;
+}
+.stat-card .value {
+  font-family: 'Oswald', sans-serif;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--red);
+}
+.stat-card .label {
+  font-size: 0.8rem;
+  color: var(--silver);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 4px;
+}
+.section {
+  background: var(--dark);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  border: 1px solid #333;
+}
+.section h2 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 1.3rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+  color: var(--red);
+  border-bottom: 2px solid #333;
+  padding-bottom: 8px;
+}
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th {
+  text-align: left;
+  padding: 10px 8px;
+  color: var(--silver);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #333;
+}
+td { padding: 10px 8px; border-bottom: 1px solid #222; }
+tr:hover { background: rgba(200,16,46,0.1); }
+.score { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 1.1rem; }
+.win { color: #4CAF50; }
+.loss { color: var(--red); }
+.draw { color: var(--gold); }
+.bar-container { display: flex; align-items: center; gap: 8px; }
+.bar { height: 8px; background: var(--red); border-radius: 4px; min-width: 4px; }
+.filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.filters select {
+  background: #222;
+  color: white;
+  border: 1px solid #444;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.loading { text-align: center; padding: 40px; color: var(--silver); }
+footer {
+  text-align: center;
+  padding: 20px;
+  color: var(--silver);
+  font-size: 0.8rem;
+}
+footer a { color: var(--red); text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Dubai Exiles</h1>
+  <p>One Team. One Family. One Exiles!</p>
+</header>
+
+<div class="container">
+  <div id="loading" class="loading">Loading dashboard...</div>
+  <div id="dashboard" style="display:none;">
+    <div class="stats-row" id="statsRow"></div>
+
+    <div class="section">
+      <h2>Results</h2>
+      <div class="filters">
+        <select id="filterTournament" onchange="renderAll()">
+          <option value="">All Tournaments</option>
+        </select>
+        <select id="filterTeam" onchange="renderAll()">
+          <option value="">All Teams</option>
+        </select>
+      </div>
+      <div id="resultsTable"></div>
+    </div>
+
+    <div class="section">
+      <h2>Top Scorers</h2>
+      <div id="scorersTable"></div>
+    </div>
+
+    <div class="section">
+      <h2>Playing Time</h2>
+      <div id="timeTable"></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <a href="/">← Back to Tracker</a>
+</footer>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyBo0Xkt_81Jkh_AmFP3B_EBUS-PXtQUlo4",
+  authDomain: "exiles-rugby-timer.firebaseapp.com",
+  databaseURL: "https://exiles-rugby-timer-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "exiles-rugby-timer",
+  storageBucket: "exiles-rugby-timer.firebasestorage.app",
+  messagingSenderId: "460567264284",
+  appId: "1:460567264284:web:8ff7dbe2796c06288373d9"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let data = { players: [], teams: [], matches: [] };
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2,'0')}`;
+}
+
+function load() {
+  db.ref('exiles').once('value').then(snap => {
+    const val = snap.val() || {};
+    data.players = Array.isArray(val.players) ? val.players : Object.values(val.players || {});
+    data.teams = Array.isArray(val.teams) ? val.teams : Object.values(val.teams || {});
+    data.matches = Array.isArray(val.matches) ? val.matches : Object.values(val.matches || {});
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    populateFilters();
+    renderAll();
+  }).catch(err => {
+    document.getElementById('loading').textContent = 'Error loading data';
+    console.error(err);
+  });
+}
+
+function populateFilters() {
+  const tournaments = [...new Set(data.matches.map(m => m.tournament).filter(Boolean))];
+  const tournSel = document.getElementById('filterTournament');
+  tournSel.innerHTML = '<option value="">All Tournaments</option>' +
+    tournaments.map(t => `<option value="${t}">${t}</option>`).join('');
+
+  const teamSel = document.getElementById('filterTeam');
+  teamSel.innerHTML = '<option value="">All Teams</option>' +
+    data.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+}
+
+function getFilteredMatches() {
+  const tourn = document.getElementById('filterTournament').value;
+  const team = document.getElementById('filterTeam').value;
+  return data.matches.filter(m => {
+    if (tourn && m.tournament !== tourn) return false;
+    if (team && m.teamId !== team) return false;
+    return true;
+  });
+}
+
+function renderAll() {
+  renderStats();
+  renderResults();
+  renderScorers();
+  renderTime();
+}
+
+function renderStats() {
+  const matches = getFilteredMatches();
+  let wins = 0, losses = 0, draws = 0, totalTries = 0;
+  matches.forEach(m => {
+    const our = Object.values(m.tries || {}).reduce((s, n) => s + (n || 0), 0);
+    const opp = m.oppTries || 0;
+    totalTries += our;
+    if (our > opp) wins++;
+    else if (our < opp) losses++;
+    else draws++;
+  });
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat-card"><div class="value">${matches.length}</div><div class="label">Matches</div></div>
+    <div class="stat-card"><div class="value win">${wins}</div><div class="label">Wins</div></div>
+    <div class="stat-card"><div class="value loss">${losses}</div><div class="label">Losses</div></div>
+    <div class="stat-card"><div class="value">${totalTries}</div><div class="label">Tries</div></div>
+  `;
+}
+
+function renderResults() {
+  const matches = getFilteredMatches().slice().reverse();
+  if (matches.length === 0) {
+    document.getElementById('resultsTable').innerHTML = '<p style="color:#A0A0A0;">No matches yet.</p>';
+    return;
+  }
+  document.getElementById('resultsTable').innerHTML = `
+    <table>
+      <tr><th>Match</th><th>Tournament</th><th style="text-align:center;">Score</th></tr>
+      ${matches.map(m => {
+        const team = data.teams.find(t => t.id === m.teamId);
+        const teamName = team ? team.name : 'DE';
+        const our = Object.values(m.tries || {}).reduce((s, n) => s + (n || 0), 0);
+        const opp = m.oppTries || 0;
+        const cls = our > opp ? 'win' : our < opp ? 'loss' : 'draw';
+        return `<tr>
+          <td>${teamName} vs ${m.opponent || 'Unknown'}</td>
+          <td>${m.tournament || 'General'}</td>
+          <td style="text-align:center;" class="score ${cls}">${our} - ${opp}</td>
+        </tr>`;
+      }).join('')}
+    </table>
+  `;
+}
+
+function renderScorers() {
+  const matches = getFilteredMatches();
+  const tries = {};
+  matches.forEach(m => {
+    Object.entries(m.tries || {}).forEach(([pid, t]) => {
+      tries[pid] = (tries[pid] || 0) + t;
+    });
+  });
+  const list = Object.entries(tries)
+    .map(([id, t]) => {
+      const p = data.players.find(x => x.id === id);
+      return { name: p ? (p.shortName || p.firstName) : 'Unknown', tries: t };
+    })
+    .filter(x => x.tries > 0)
+    .sort((a, b) => b.tries - a.tries)
+    .slice(0, 10);
+
+  if (list.length === 0) {
+    document.getElementById('scorersTable').innerHTML = '<p style="color:#A0A0A0;">No tries recorded yet.</p>';
+    return;
+  }
+  const max = list[0].tries;
+  document.getElementById('scorersTable').innerHTML = `
+    <table>
+      <tr><th>Player</th><th>Tries</th><th></th></tr>
+      ${list.map(p => `
+        <tr>
+          <td>${p.name}</td>
+          <td style="font-weight:700;">${p.tries}</td>
+          <td style="width:40%;"><div class="bar" style="width:${(p.tries/max)*100}%;"></div></td>
+        </tr>
+      `).join('')}
+    </table>
+  `;
+}
+
+function renderTime() {
+  const matches = getFilteredMatches();
+  const times = {};
+  matches.forEach(m => {
+    Object.entries(m.times || {}).forEach(([pid, secs]) => {
+      times[pid] = (times[pid] || 0) + secs;
+    });
+  });
+  const list = Object.entries(times)
+    .map(([id, t]) => {
+      const p = data.players.find(x => x.id === id);
+      return { name: p ? (p.shortName || p.firstName) : 'Unknown', time: t };
+    })
+    .filter(x => x.time > 0)
+    .sort((a, b) => b.time - a.time)
+    .slice(0, 10);
+
+  if (list.length === 0) {
+    document.getElementById('timeTable').innerHTML = '<p style="color:#A0A0A0;">No playing time recorded yet.</p>';
+    return;
+  }
+  const max = list[0].time;
+  document.getElementById('timeTable').innerHTML = `
+    <table>
+      <tr><th>Player</th><th>Time</th><th></th></tr>
+      ${list.map(p => `
+        <tr>
+          <td>${p.name}</td>
+          <td style="font-family:'Oswald',sans-serif;">${formatTime(p.time)}</td>
+          <td style="width:40%;"><div class="bar" style="width:${(p.time/max)*100}%;"></div></td>
+        </tr>
+      `).join('')}
+    </table>
+  `;
+}
+
+load();
+</script>
+</body>
+</html>
